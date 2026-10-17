@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Production Calendar</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1d2430;--mute:#667085;--line:#dfe3ea;--off:#eceef2;--ph:#fde8e8;--phink:#b42318;--acc:#2456d6;--today:#2456d6}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--panel:#1c2027;--ink:#e6e9ef;--mute:#98a2b3;--line:#2e3440;--off:#242933;--ph:#3b2024;--phink:#ff9b94;--acc:#6b93ff;--today:#6b93ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,Segoe UI,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:16px;margin:0 8px 0 0;letter-spacing:.04em;text-transform:uppercase}
+.grp{display:flex;gap:6px;align-items:center}
+button,select,input{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 9px}
+button{cursor:pointer}button:hover{border-color:var(--acc)}
+button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+label.chk{display:flex;gap:5px;align-items:center;color:var(--mute);font-size:13px}
+#status{margin-left:auto;color:var(--mute);font-size:12px}
+main{padding:12px 16px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 10px;font-size:12px;color:var(--mute)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.legend span{cursor:pointer}.legend span.dim{opacity:.35}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:auto}
+/* gantt */
+#gantt{position:relative;min-width:100%}
+.g-head,.g-row{display:flex}
+.g-label{position:sticky;left:0;z-index:3;flex:0 0 130px;background:var(--panel);border-right:1px solid var(--line);padding:6px 10px;font-weight:600;font-size:12px;display:flex;align-items:center}
+.g-head .g-label{z-index:4}
+.g-days{display:flex;position:relative}
+.dh{border-right:1px solid var(--line);text-align:center;font-size:11px;padding:3px 0;background:var(--panel)}
+.dh b{display:block;font-size:12px}.dh.off{background:var(--off)}.dh.ph{background:var(--ph);color:var(--phink)}
+.dh.today b{color:var(--today)}
+.ampm{display:flex;border-top:1px solid var(--line);color:var(--mute);font-size:10px}.ampm span{flex:1;padding:1px 0}
+.ampm span+span{border-left:1px dotted var(--line)}
+.g-row{border-top:1px solid var(--line)}
+.cell{border-right:1px solid var(--line);flex:none;background-image:linear-gradient(90deg,transparent 49.5%,var(--line) 49.5%,var(--line) 50.5%,transparent 50.5%);background-size:100% 100%;opacity:1}
+.cell.off{background-color:var(--off)}.cell.ph{background-color:var(--ph)}
+.lane-wrap{position:relative}
+.bar{position:absolute;height:20px;border-radius:3px;color:#fff;font-size:11px;line-height:20px;padding:0 4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border:1px solid rgba(0,0,0,.25);cursor:default;z-index:1}
+.bar:hover{z-index:5;filter:brightness(1.12);outline:2px solid var(--ink)}
+/* month */
+.mgrid{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr))}
+.mh{padding:6px;font-size:12px;color:var(--mute);border-bottom:1px solid var(--line);text-align:center}
+.md{min-height:110px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:4px;font-size:11px}
+.md.off{background:var(--off)}.md.ph{background:var(--ph)}.md.out{opacity:.45}
+.md .n{font-weight:600;font-size:12px;display:flex;justify-content:space-between}
+.md .n em{font-style:normal;color:var(--phink);font-weight:500}
+.chip{display:block;color:#fff;border-radius:3px;padding:1px 4px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.md.today .n span{color:var(--today)}
+.mtitle{font-weight:600;min-width:130px;text-align:center}
+table{border-collapse:collapse;width:100%}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}
+th{color:var(--mute);font-weight:600;font-size:12px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+.hide{display:none!important}
+#err{color:var(--phink);font-size:13px;margin:0 0 8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Production Calendar</h1>
+  <div class="grp" id="views">
+    <button data-v="gantt" class="on">Scheduling</button>
+    <button data-v="month">Month</button>
+    <button data-v="orders">Orders</button>
+  </div>
+  <div class="grp" id="nav">
+    <button id="prev" title="Previous">‹</button>
+    <input type="date" id="date">
+    <button id="next" title="Next">›</button>
+    <button id="today">Today</button>
+    <select id="span" title="Days per page"><option>7</option><option selected>14</option><option>21</option><option>31</option></select>
+  </div>
+  <div class="grp">
+    <select id="part"><option value="">All parts</option></select>
+    <label class="chk"><input type="checkbox" id="finite" checked> Finite capacity</label>
+    <label class="chk">Schedule from <input type="date" id="from"></label>
+  </div>
+  <div class="grp"><button id="load">Load Excel…</button><input type="file" id="file" accept=".xlsx,.xls" class="hide"></div>
+  <div id="status"></div>
+</header>
+<main>
+  <p id="err" class="hide"></p>
+  <div class="legend" id="legend"></div>
+  <div class="card" id="v-gantt"><div id="gantt"></div></div>
+  <div class="card hide" id="v-month"></div>
+  <div class="card hide" id="v-orders"></div>
+</main>
+
+<script>
+const SEED = {"orderlist": [["SN", "CUSTOMER", "TYPE", "JOB NUMBER", "PART NUMBER", "QTY/(BAL QTY)", "BATCH", "PROCESS", "PROCESS OUTPUT DATE", "SHIPMENT ETD", "SETUP TIME", "PROCESS TIME (MINUTE)", "MASS QUANTITY"], [1, "BI", "FG", "RPO-2026-013752", "BI6012705-0D", "100/(100)", "BI BATCH 131", "LASER CUTTING", null, "2026-10-28(10)\n2026-10-28(47)\n2026-10-31(10)\n2026-11-01(33)\n", 15, 1, 1], [null, null, null, null, null, null, null, "DEBURRING_MANUAL HOLE DEBURR", null, null, null, 5, 1], [null, null, null, null, null, null, null, "DEBURRING-MACHINE DEBURR", null, null, null, 5, 1], [null, null, null, null, null, null, null, "BENDING", null, null, 15, 3, 1], [null, null, null, null, null, null, null, "QA", null, null, null, 5, 1], [null, null, null, null, null, null, null, "PLATING", null, null, null, 180, 50], [null, null, null, null, null, null, null, "OUTGOING INSPECTION", null, null, null, 10, 1], [null, null, null, null, null, null, null, "PACKING", null, null, null, 5, 1], [9, "BI", "FG", "RPO-2026-013729", "BI6012710-0D", "100/(100)", "BI BATCH 129", "LASER CUTTING", null, "2026-11-05(100)\n", 15, 1, 1], [null, null, null, null, null, null, null, "DEBURRING_MANUAL HOLE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "DEBURRING-MACHINE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "BENDING", null, null, 15, 3, 1], [null, null, null, null, null, null, null, "QA", null, null, null, 5, 1], [null, null, null, null, null, null, null, "PLATING", null, null, null, 180, 30], [null, null, null, null, null, null, null, "OUTGOING INSPECTION", null, null, null, 10, 1], [null, null, null, null, null, null, null, "PACKING", null, null, null, 5, 1], [15, "BI", "FG", "RPO-2026-013747", "BI6012717-0D", "100/(100)", "BI BATCH 130", "LASER CUTTING", null, "2026-10-31(59)\n2026-10-31(8)\n2026-11-04(33)\n", 15, 1, 1], [null, null, null, null, null, null, null, "DEBURRING_MANUAL HOLE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "DEBURRING-MACHINE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "BENDING", null, null, 15, 3, 1], [null, null, null, null, null, null, null, "QA", null, null, null, 5, 1], [null, null, null, null, null, null, null, "PLATING", null, null, null, 180, 60], [null, null, null, null, null, null, null, "OUTGOING INSPECTION", null, null, null, 10, 1], [null, null, null, null, null, null, null, "PACKING", null, null, null, 5, 1], [21, "BI", "FG", "RPO-2026-013735", "BI6012703-0D", "100/(100)", "BI BATCH 129", "LASER CUTTING", null, "2027-01-12(24)\n2027-01-12(6)\n2027-02-05(20)\n2027-02-16(8)\n2027-02-19(13)\n2027-03-16(8)\n2027-03-16(1)\n2027-03-30(9)\n2027-03-30(2)\n2027-04-15(9)\n", 15, 1, 1], [null, null, null, null, null, null, null, "DEBURRING_MANUAL HOLE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "DEBURRING-MACHINE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "BENDING", null, null, 15, 3, 1], [null, null, null, null, null, null, null, "QA", null, null, null, 5, 1], [null, null, null, null, null, null, null, "PLATING", null, null, null, 180, 45], [null, null, null, null, null, null, null, "OUTGOING INSPECTION", null, null, null, 10, 1], [null, null, null, null, null, null, null, "PACKING", null, null, null, 5, 1], [35, "BI", "FG", "RPO-2026-013759", "BI6012712-0D", "100/(100)", "BI BATCH 131", "LASER CUTTING", null, "2027-01-07(42)\n2027-01-15(16)\n2027-01-19(29)\n2027-02-03(13)\n", 15, 1, 1], [null, null, null, null, null, null, null, "DEBURRING_MANUAL HOLE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "DEBURRING-MACHINE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "BENDING", null, null, 15, 3, 1], [null, null, null, null, null, null, null, "QA", null, null, null, 5, 1], [null, null, null, null, null, null, null, "PLATING", null, null, null, 180, 65], [null, null, null, null, null, null, null, "OUTGOING INSPECTION", null, null, null, 10, 1], [null, null, null, null, null, null, null, "PACKING", null, null, null, 5, 1], [35, "BI", "FG", "RPO-2026-013760", "BI6012712-0D", "100/(100)", "BI BATCH 131", "LASER CUTTING", null, "2027-01-07(42)\n2027-01-15(16)\n2027-01-19(29)\n2027-02-03(13)\n", 15, 1, 1], [null, null, null, null, null, null, null, "DEBURRING_MANUAL HOLE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "DEBURRING-MACHINE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "BENDING", null, null, 15, 3, 1], [null, null, null, null, null, null, null, "QA", null, null, null, 5, 1], [null, null, null, null, null, null, null, "PLATING", null, null, null, 180, 65], [null, null, null, null, null, null, null, "OUTGOING INSPECTION", null, null, null, 10, 1], [null, null, null, null, null, null, null, "PACKING", null, null, null, 5, 1], [1, "BI", "FG", "RPO-2026-013761", "BI6012705-0D", "200/(100)", "BI BATCH 131", "LASER CUTTING", null, "2026-10-28(10)\n2026-10-28(47)\n2026-10-31(10)\n2026-11-01(33)\n", 15, 1, 1], [null, null, null, null, null, null, null, "DEBURRING_MANUAL HOLE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "DEBURRING-MACHINE DEBURR", null, null, null, 7, 1], [null, null, null, null, null, null, null, "BENDING", null, null, 15, 3, 1], [null, null, null, null, null, null, null, "QA", null, null, null, 5, 1], [null, null, null, null, null, null, null, "PLATING", null, null, null, 180, 50], [null, null, null, null, null, null, null, "OUTGOING INSPECTION", null, null, null, 10, 1], [null, null, null, null, null, null, null, "PACKING", null, null, null, 5, 1]], "holidays": [["Date", "Weekdays", "Remark"], ["2026-02-17 00:00", 2, "PH"], ["2026-02-18 00:00", 3, "PH"], ["2026-03-21 00:00", 6, "PH"], ["2026-03-22 00:00", 7, "PH"], ["2026-03-23 00:00", 1, "PH"], ["2026-03-24 00:00", 2, "PH"], ["2026-05-01 00:00", 5, "PH"], ["2026-05-27 00:00", 3, "PH"], ["2026-05-31 00:00", 7, "PH"], ["2026-06-01 00:00", 1, "Replacement"], ["2026-06-02 00:00", 2, "Replacement"], ["2026-06-17 00:00", 3, "PH"], ["2026-08-25 00:00", 2, "PH"], ["2026-08-31 00:00", 1, "PH"], ["2026-09-16 00:00", 3, "PH"], ["2026-11-08 00:00", 7, "PH"], ["2026-11-09 00:00", 1, "Replacement"], ["2026-12-25 00:00", 5, "PH"]]};
+
+// ---------- helpers ----------
+const DAY = 86400000;
+const pad = n => String(n).padStart(2,'0');
+const ymd = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+const idx = s => { const [y,m,d] = s.slice(0,10).split('-').map(Number); return Math.round(Date.UTC(y,m-1,d)/DAY); };
+const fromIdx = i => new Date(i*DAY);
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const dow = i => fromIdx(i).getUTCDay();
+const fmtD = i => { const d = fromIdx(i); return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth()+1)}/${d.getUTCFullYear()}`; };
+const fmtH = h => (Math.round(h*10)/10).toString();
+const PAL = ['#2e9e4f','#2f6fdb','#c9622b','#8a4fd0','#c0397a','#0f8f9c','#a98a0c','#5b6b7a','#b8403a','#4f8a2b'];
+
+function toYMD(v){
+  if (v instanceof Date){ const t=new Date(v.getTime()+60000); return `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`; }
+  if (typeof v==='number'){ const t=new Date(Math.round((v-25569)*DAY)); return ymd(t); }
+  return String(v).slice(0,10);
+}
+
+// ---------- parse the ORDER LIST sheet (array-of-rows) into a model ----------
+// One job = one row group (merged cells): job header row + one row per process, in routing order.
+// QTY/(BAL QTY): the number in brackets is the quantity still to run.
+const HPD = 9.5, DPW = 6;   // working hours per day / days per week, same for every process
+function parseModel(rows, holidays){
+  const procs = [], seen = {}, ords = [];
+  let cur = null;
+  for (let r=1;r<rows.length;r++){
+    const row = rows[r]; if(!row) continue;
+    const name = row[7] ? String(row[7]).replace(/\s+/g,' ').trim() : '';
+    if (row[3]){
+      const q = String(row[5]==null?'':row[5]).match(/(\d+(?:\.\d+)?)\s*(?:\/\s*\(\s*(\d+(?:\.\d+)?)\s*\))?/);
+      const total = q?+q[1]:0, qty = q&&q[2]!==undefined?+q[2]:total;
+      const etd = []; String(row[9]==null?'':row[9]).replace(/(\d{4}-\d{2}-\d{2})\s*\(\s*(\d+(?:\.\d+)?)\s*\)/g,(_,d,n)=>{etd.push({d,qty:+n});});
+      etd.sort((a,b)=>a.d.localeCompare(b.d));
+      cur = {no:String(row[3]),cust:row[1]||'',item:row[4]||'',batch:row[6]||'',total,qty,etd,route:[]};
+      ords.push(cur);
+    }
+    if(!cur||!name) continue;
+    if(!seen[name]){ seen[name]=1; procs.push({col:name,name,hpd:HPD,dpw:DPW}); }
+    cur.route.push({proc:name,setup:Number(row[10])||0,pt:Number(row[11])||0,mass:Math.max(1,Number(row[12])||1)});
+  }
+  const hol = {};
+  for (let r=1;r<holidays.length;r++){ const h=holidays[r]; if(h&&h[0]) hol[idx(toYMD(h[0]))]=h[2]||'PH'; }
+  return {procs,ords,hol};
+}
+
+// ---------- scheduling ----------
+function isWork(m,p,d){
+  if (m.hol[d]!==undefined) return false;
+  const w = dow(d);
+  if (p.dpw<=5 && w===6) return false;
+  if (p.dpw<=6 && w===0) return false;
+  return true;
+}
+function nextWork(m,p,d){ let n=0; while(!isWork(m,p,d) && n++<400) d++; return d; }
+
+// Step time = setup (once, first run only) + ceil(remaining qty / mass qty) x process time.
+// A "mass qty" step outputs that many pieces in one process time instead of one piece per process time.
+function stepMinutes(st, qty){ return st.setup + Math.ceil(qty/st.mass-1e-9)*st.pt; }
+
+function schedule(m, finite, from){
+  const busy = {};            // process -> position (day + fraction)
+  const out = [];
+  const pmap = {}; m.procs.forEach(p=>pmap[p.col]=p);
+  const list = [...m.ords].sort((a,b)=>(a.etd[0]?a.etd[0].d:'9999').localeCompare(b.etd[0]?b.etd[0].d:'9999')||a.no.localeCompare(b.no));
+  list.forEach(o=>{
+    const res = {o, segs:[], missing:!o.route.length};
+    out.push(res);
+    let pos = from;
+    o.route.forEach(st=>{
+      const p = pmap[st.proc];
+      const mins = o.qty>0 ? stepMinutes(st,o.qty) : 0; if(mins<=0) return;
+      let t = pos; if (finite && busy[p.col]>t) t = busy[p.col];
+      let d = Math.floor(t+1e-9), f = t-d;
+      let rem = mins/60/p.hpd;
+      const batches = Math.ceil(o.qty/st.mass-1e-9);
+      while(true){
+        const nd = nextWork(m,p,d); if(nd!==d){ d=nd; f=0; }
+        const take = Math.min(1-f, rem);
+        res.segs.push({proc:p.col,name:p.name,d,f0:f,f1:f+take,hrs:take*p.hpd,total:mins/60,setup:st.setup,batches,pt:st.pt,mass:st.mass});
+        rem -= take; f += take;
+        if (rem<1e-9) break;
+        d++; f=0;
+      }
+      let end = f>=1-1e-9 ? d+1 : d+f;
+      pos = end; busy[p.col] = end;
+    });
+    res.finish = res.segs.length ? Math.max(...res.segs.map(s=>s.d)) : null;
+  });
+  return out;
+}
+
+// ---------- state / ui ----------
+let model, plan, colors = {}, hidden = new Set(), view='gantt', viewStart=0, span=14;
+const $ = id => document.getElementById(id);
+
+function build(){
+  plan = schedule(model, $('finite').checked, idx($('from').value));
+  colors = {}; plan.forEach((r,i)=>colors[r.o.no]=PAL[i%PAL.length]);
+  const sel = $('part'), cur = sel.value;
+  sel.innerHTML = '<option value="">All parts</option>'+[...new Set(model.ords.map(o=>o.item))].map(i=>`<option>${i}</option>`).join('');
+  sel.value = [...sel.options].some(o=>o.value===cur)?cur:'';
+  const miss = plan.filter(r=>r.missing).map(r=>r.o.no);
+  const e = $('err'); e.classList.toggle('hide',!miss.length);
+  e.textContent = miss.length? `No routing for: ${miss.join(', ')}` : '';
+  render();
+}
+function visible(){ const p=$('part').value; return plan.filter(r=>!hidden.has(r.o.no)&&(!p||r.o.item===p)); }
+
+function legend(){
+  $('legend').innerHTML = plan.filter(r=>!$('part').value||r.o.item===$('part').value).map(r=>
+    `<span data-no="${r.o.no}" class="${hidden.has(r.o.no)?'dim':''}"><i style="background:${colors[r.o.no]}"></i>${r.o.no} · ${r.o.item}</span>`).join('');
+}
+$('legend').onclick = e=>{ const s=e.target.closest('span'); if(!s) return; const n=s.dataset.no; hidden.has(n)?hidden.delete(n):hidden.add(n); render(); };
+
+function dayInfo(d){
+  const ph = model.hol[d]!==undefined, w=dow(d);
+  return {ph, off: w===0, cls: ph?'ph':(w===0?'off':''), remark: model.hol[d]};
+}
+
+function renderGantt(){
+  const DW = Math.max(48, Math.min(110, Math.floor((($('v-gantt').clientWidth||1000)-130)/span)));
+  const days = Array.from({length:span},(_,i)=>viewStart+i);
+  const today = idx(ymd(new Date(Date.now()-new Date().getTimezoneOffset()*60000)));
+  const vis = visible();
+  const rows = model.procs.map(p=>{
+    const items = [];
+    vis.forEach(r=>r.segs.filter(s=>s.proc===p.col).forEach(s=>items.push({r,s})));
+    items.sort((a,b)=>(a.s.d+a.s.f0)-(b.s.d+b.s.f0));
+    const lanes=[]; items.forEach(it=>{
+      const a=it.s.d+it.s.f0, b=it.s.d+it.s.f1;
+      let l=lanes.findIndex(e=>e<=a+1e-9); if(l<0){l=lanes.length;lanes.push(0);} lanes[l]=b; it.lane=l;
+    });
+    return {p,items,n:Math.max(1,lanes.length)};
+  });
+  let h = `<div class="g-head"><div class="g-label">Process</div><div class="g-days">`+
+    days.map(d=>{const i=dayInfo(d),dt=fromIdx(d);
+      return `<div class="dh ${i.cls} ${d===today?'today':''}" style="width:${DW}px" title="${i.remark||''}"><b>${dt.getUTCDate()} ${MON[dt.getUTCMonth()]}</b>${DOW[dt.getUTCDay()]}${i.ph?' · '+i.remark:''}<div class="ampm"><span>AM</span><span>PM</span></div></div>`}).join('')+`</div></div>`;
+  rows.forEach(({p,items,n})=>{
+    const H = n*24+8;
+    h += `<div class="g-row"><div class="g-label" style="min-height:${H}px">${p.name}</div><div class="lane-wrap g-days" style="height:${H}px">`+
+      days.map(d=>`<div class="cell ${dayInfo(d).cls}" style="width:${DW}px;height:${H}px"></div>`).join('');
+    items.forEach(({r,s,lane})=>{
+      const x=(s.d+s.f0-viewStart)*DW, w=(s.f1-s.f0)*DW;
+      if (x+w<0||x>span*DW) return;
+      const tip=`${r.o.no} — ${r.o.item} (${r.o.batch})\n${p.name}: ${fmtH(s.total)} h total (setup ${s.setup} min + ${s.batches} × ${s.pt} min; ${r.o.qty} pcs, mass ${s.mass})\n${fmtD(s.d)} · ${fmtH(s.hrs)} h this day`;
+      h += `<div class="bar" style="left:${x}px;width:${Math.max(w-1,4)}px;top:${4+lane*24}px;background:${colors[r.o.no]}" title="${tip.replace(/"/g,'&quot;')}">${r.o.no.replace('RPO-2026-','')}</div>`;
+    });
+    h += `</div></div>`;
+  });
+  $('gantt').innerHTML = h;
+}
+
+function renderMonth(){
+  const first = fromIdx(viewStart), y=first.getUTCFullYear(), mo=first.getUTCMonth();
+  const start0 = idx(`${y}-${pad(mo+1)}-01`); const gridStart = start0 - dow(start0);
+  const dim = new Date(Date.UTC(y,mo+1,0)).getUTCDate();
+  const total = Math.ceil((dow(start0)+dim)/7)*7;
+  const vis = visible(); const by = {};
+  vis.forEach(r=>{ const m={}; r.segs.forEach(s=>{(m[s.d]=m[s.d]||new Set()).add(s.name)}); for(const d in m)(by[d]=by[d]||[]).push({r,procs:[...m[d]]}); });
+  const today = idx(ymd(new Date(Date.now()-new Date().getTimezoneOffset()*60000)));
+  let h = `<div class="mgrid">`+DOW.map(d=>`<div class="mh">${d}</div>`).join('');
+  for(let i=0;i<total;i++){
+    const d=gridStart+i, dt=fromIdx(d), info=dayInfo(d), out=dt.getUTCMonth()!==mo;
+    h += `<div class="md ${info.cls} ${out?'out':''} ${d===today?'today':''}"><div class="n"><span>${dt.getUTCDate()}</span>${info.ph?`<em>${info.remark}</em>`:''}</div>`+
+      (by[d]||[]).map(({r,procs})=>`<span class="chip" style="background:${colors[r.o.no]}" title="${r.o.no}: ${procs.join(', ')}">${r.o.no.replace('RPO-2026-','')} ${procs.join('/')}</span>`).join('')+`</div>`;
+  }
+  $('v-month').innerHTML = h+`</div>`;
+}
+
+function renderOrders(){
+  const etd = r=>r.o.etd.map(e=>`${fmtD(idx(e.d))} (${e.qty})`).join('<br>')||'—';
+  $('v-orders').innerHTML = `<table><tr><th>Order</th><th>Customer</th><th>Part</th><th>Batch</th><th>Qty to run</th><th>Shipment ETD (qty)</th><th>Finish</th><th>Work days</th><th>Status</th></tr>`+
+    visible().map(r=>{
+      const days = new Set(r.segs.map(s=>s.d)).size, o=r.o;
+      const first = o.etd.length?idx(o.etd[0].d):null, last = o.etd.length?idx(o.etd[o.etd.length-1].d):null;
+      let st = '—', col = '';
+      if (r.finish!=null && first!=null){
+        if (r.finish>last){ st=`Late ${r.finish-last} d`; col='var(--phink)'; }
+        else if (r.finish>first){ st=`Misses first ETD by ${r.finish-first} d`; col='#b54708'; }
+        else st='On time';
+      }
+      return `<tr><td><i class="sw" style="background:${colors[o.no]}"></i>${o.no}</td><td>${o.cust}</td><td>${o.item}</td><td>${o.batch}</td><td>${o.qty} / ${o.total}</td><td>${etd(r)}</td><td>${r.finish!=null?fmtD(r.finish):'—'}</td><td>${days}</td><td style="color:${col}">${st}</td></tr>`}).join('')+`</table>`;
+}
+
+function render(){
+  legend();
+  ['gantt','month','orders'].forEach(v=>$('v-'+v).classList.toggle('hide',v!==view));
+  document.querySelectorAll('#views button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
+  $('nav').classList.toggle('hide',view==='orders');
+  $('span').classList.toggle('hide',view!=='gantt');
+  $('date').value = ymd(fromIdx(viewStart));
+  if(view==='gantt') renderGantt(); else if(view==='month') renderMonth(); else renderOrders();
+  $('status').textContent = `${model.ords.length} orders · ${model.procs.length} processes · ${Object.keys(model.hol).length} holidays`;
+}
+
+const step = dir => { if(view==='month'){const d=fromIdx(viewStart);viewStart=idx(ymd(new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+dir,1))));} else viewStart+=dir*span; render(); };
+$('prev').onclick=()=>step(-1); $('next').onclick=()=>step(1);
+$('today').onclick=()=>{viewStart=idx(ymd(new Date(Date.now()-new Date().getTimezoneOffset()*60000)));render();};
+$('date').onchange=e=>{ if(e.target.value){viewStart=idx(e.target.value);render();} };
+$('span').onchange=e=>{span=+e.target.value;render();};
+$('part').onchange=render; $('finite').onchange=build; $('from').onchange=()=>{ if($('from').value){ viewStart=idx($('from').value); build(); } };
+$('views').onclick=e=>{const b=e.target.closest('button'); if(b){view=b.dataset.v;render();}};
+$('load').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const wb=XLSX.read(await f.arrayBuffer(),{cellDates:true});
+    const get=n=>{const k=wb.SheetNames.find(s=>s.trim().toUpperCase()===n); if(!k) return null; return XLSX.utils.sheet_to_json(wb.Sheets[k],{header:1,defval:null,raw:true});};
+    const rows=get('ORDER LIST'); if(!rows) throw new Error('Missing sheet ORDER LIST');
+    model=parseModel(rows,get('PUBLIC HOLIDAY')||SEED.holidays);
+    hidden.clear(); initStart(); build();
+  }catch(err){ $('err').textContent='Could not read file: '+err.message; $('err').classList.remove('hide'); }
+  e.target.value='';
+};
+window.addEventListener('resize',()=>{ if(view==='gantt') renderGantt(); });
+
+function initStart(){ viewStart = idx($('from').value); }
+$('from').value = ymd(new Date(Date.now()-new Date().getTimezoneOffset()*60000));
+model = parseModel(SEED.orderlist, SEED.holidays);
+initStart(); build();
+</script>
+</body>
+</html>
